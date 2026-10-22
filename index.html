@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f7f6f1">
+<title>Klubbkoll</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: sticky header with club + status, "latest times" strip, then one compact table per class.
+   Palette borrows from the orienteering map: paper, control-flag orange, contour brown, forest green. */
+:root {
+  --paper: #f7f6f1;
+  --card: #ffffff;
+  --ink: #1f2420;
+  --muted: #6b6f66;
+  --line: #e2dfd4;
+  --flag: #e8611a;        /* control flag orange: new times */
+  --flag-soft: #fde6d6;
+  --forest: #2f7d4a;      /* finished OK */
+  --contour: #9a5b2b;     /* status problems */
+  --water: #2a6fb0;       /* running */
+  --font-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #141814; --card: #1c211c; --ink: #e9ebe4; --muted: #9aa094; --line: #2d342d;
+    --flag: #ff8a3d; --flag-soft: #4a2a17; --forest: #5fbf7f; --contour: #d39a68; --water: #6fa8e0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #141814; --card: #1c211c; --ink: #e9ebe4; --muted: #9aa094; --line: #2d342d;
+  --flag: #ff8a3d; --flag-soft: #4a2a17; --forest: #5fbf7f; --contour: #d39a68; --water: #6fa8e0;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font: 15px/1.4 var(--font-body);
+  font-variant-numeric: tabular-nums;
+}
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 1100px; margin: 0 auto; }
+
+header { position: sticky; top: 0; z-index: 5; background: var(--paper); border-bottom: 1px solid var(--line); }
+header .wrap { padding-block: 10px; display: grid; gap: 6px; }
+.toprow { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+h1 { margin: 0; font: 700 1.6rem/1 var(--font-display); letter-spacing: .01em; text-wrap: balance; }
+h1 .flag { display: inline-block; width: .7em; height: .7em; margin-right: .3em; vertical-align: -.02em;
+  background: linear-gradient(135deg, var(--card) 50%, var(--flag) 50%); border: 1.5px solid var(--flag); }
+.comp { color: var(--muted); font-size: .9rem; min-width: 0; }
+.status { display: flex; gap: 10px; align-items: center; font-size: .82rem; color: var(--muted); flex-wrap: wrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--forest); display: inline-block; margin-right: 4px; }
+.dot.err { background: var(--contour); }
+.dot.busy { background: var(--water); }
+.counts { display: flex; gap: 12px; flex-wrap: wrap; font-size: .85rem; }
+.counts b { font-family: var(--font-display); font-size: 1.05rem; }
+
+button, input { font: inherit; color: inherit; }
+button { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--flag); outline-offset: 2px; }
+.linkbtn { border: 0; background: none; padding: 0; text-decoration: underline; color: var(--muted); }
+
+details.settings { font-size: .9rem; }
+details.settings summary { cursor: pointer; color: var(--muted); }
+form.cfg { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; padding-top: 8px; }
+form.cfg label { display: grid; gap: 2px; font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+form.cfg input { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-width: 0; width: 100%; }
+form.cfg .grow { flex: 1 1 200px; }
+form.cfg .narrow { flex: 0 1 130px; }
+
+.picker { display: grid; gap: 8px; padding-top: 10px; }
+.pickhead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.pickhead .eyebrow { margin: 0; }
+.chk { display: flex; gap: 6px; align-items: center; font-size: .9rem; cursor: pointer; }
+.chk input { accent-color: var(--flag); width: 18px; height: 18px; margin: 0; }
+#raceSearch { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; width: 100%; }
+.races { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 50vh; overflow-y: auto; }
+.races button { width: 100%; text-align: left; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 9px 11px; border-radius: 8px; }
+.races button .rn { font-weight: 600; min-width: 0; }
+.races button .ro { grid-column: 1; font-size: .82rem; color: var(--muted); min-width: 0; }
+.races button .rc { grid-row: 1 / span 2; grid-column: 2; align-self: center; font: 600 .74rem/1 var(--font-display); letter-spacing: .05em; color: var(--muted); }
+.races button[aria-pressed="true"] { border-color: var(--flag); background: var(--flag-soft); }
+.races .none { color: var(--muted); font-size: .9rem; padding: 6px 0; }
+
+main .wrap { padding-block: 14px 40px; display: grid; gap: 22px; }
+.eyebrow { font: 600 .78rem/1 var(--font-display); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; }
+
+.feed { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.feed:empty::before { content: "New radio, pre-warning and finish times for your runners show up here."; color: var(--muted); font-size: .9rem; }
+.ev { flex: 0 0 auto; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 150px; }
+.ev.hot { border-color: var(--flag); background: var(--flag-soft); }
+.ev .who { font-weight: 600; }
+.ev .what { font-size: .82rem; color: var(--muted); }
+.ev .t { font: 600 1.15rem/1.1 var(--font-display); }
+
+section.cls h2 { margin: 0 0 6px; font: 700 1.25rem/1.1 var(--font-display); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+section.cls h2 small { font: 500 .85rem var(--font-body); color: var(--muted); }
+.tbl { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+th { font: 600 .74rem/1.1 var(--font-display); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); text-align: right; padding: 8px 8px 6px; white-space: nowrap; border-bottom: 1px solid var(--line); }
+th.l, td.l { text-align: left; }
+td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td.pl { font: 700 1.05rem/1.2 var(--font-display); width: 2.2em; color: var(--muted); }
+td.pl.ok { color: var(--forest); }
+td.who { position: sticky; left: 0; background: var(--card); white-space: normal; min-width: 9.5em; max-width: 14em; }
+td.who .n { font-weight: 600; }
+td.who .c { font-size: .78rem; color: var(--muted); }
+.cell .v { font-weight: 500; }
+.cell .s { display: block; font-size: .74rem; color: var(--muted); }
+.cell.empty .v { color: var(--line); }
+.cell.fresh { background: var(--flag-soft); box-shadow: inset 3px 0 0 var(--flag); }
+.cell.fresh .v { color: var(--flag); font-weight: 700; }
+.cell.flash { animation: flash 1.2s ease-out 2; }
+@keyframes flash { 0% { background: var(--flag); } 100% { background: var(--flag-soft); } }
+@media (prefers-reduced-motion: reduce) { .cell.flash { animation: none; } }
+.tag { display: inline-block; font: 600 .72rem/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; padding: 3px 5px; border-radius: 4px; }
+.tag.run { color: var(--water); border: 1px solid var(--water); }
+.tag.bad { color: var(--contour); border: 1px solid var(--contour); }
+.tag.wait { color: var(--muted); border: 1px solid var(--line); }
+
+.note { font-size: .9rem; color: var(--muted); }
+.banner { background: var(--flag-soft); border: 1px solid var(--flag); border-radius: 8px; padding: 10px 12px; font-size: .9rem; }
+.empty-state { background: var(--card); border: 1px dashed var(--line); border-radius: 8px; padding: 18px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="toprow">
+      <h1><span class="flag" aria-hidden="true"></span><span id="clubTitle">Klubbkoll</span></h1>
+      <span class="comp" id="compName">Loading competition…</span>
+    </div>
+    <div class="status">
+      <span><span class="dot" id="dot"></span><span id="statusText">Starting…</span></span>
+      <span class="counts" id="counts"></span>
+      <button type="button" class="linkbtn" id="seenBtn">Mark all seen</button>
+    </div>
+    <details class="settings" id="settings">
+      <summary>Race and club</summary>
+      <div class="picker">
+        <div class="pickhead">
+          <p class="eyebrow" id="racesTitle">Today's races</p>
+          <label class="chk"><input type="checkbox" id="onlySe" checked> Only Swedish races</label>
+        </div>
+        <input type="search" id="raceSearch" placeholder="Search race or organizer" autocomplete="off" aria-label="Search races">
+        <ul class="races" id="raceList" aria-live="polite"></ul>
+        <p class="note" id="raceNote"></p>
+      </div>
+      <form class="cfg" id="cfg">
+        <label class="grow">Club (comma for several)<input id="clubInput" autocomplete="off"></label>
+        <label class="narrow">Other race: ID or link<input id="compInput" inputmode="url" autocomplete="off"></label>
+        <button type="submit">Follow</button>
+        <button type="button" id="demoBtn">Demo</button>
+      </form>
+    </details>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div id="banner" hidden></div>
+    <section aria-labelledby="feedTitle">
+      <p class="eyebrow" id="feedTitle">Latest times</p>
+      <div class="feed" id="feed"></div>
+    </section>
+    <div id="classes"></div>
+  </div>
+</main>
+
+<script>
+(() => {
+"use strict";
+
+/* ---------- Settings ---------- */
+const API = "https://liveresultat.orientering.se/api.php";
+const POLL_MS = 15000;          // tracked classes (classes with club runners)
+const RESCAN_MS = 5 * 60000;    // other classes, to catch late additions
+const FRESH_MS = 3 * 60000;     // how long a new time stays highlighted
+const CONCURRENCY = 4;
+
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("klubbkoll." + k); return v == null ? d : v; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("klubbkoll." + k, v); } catch {} }
+};
+const qs = new URLSearchParams(location.search);
+let cfg = {
+  comp: qs.get("comp") || store.get("comp", "40847"),
+  club: qs.get("club") || store.get("club", "OK Södertörn"),
+  demo: location.hash === "#demo" || qs.has("demo")
+};
+
+/* ---------- Formatting ---------- */
+const pad = n => String(n).padStart(2, "0");
+function fmtRun(cs) {               // running time, hundredths -> m:ss or h:mm:ss
+  if (cs == null || cs === "" || cs < 0) return "";
+  const s = Math.floor(cs / 100), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
+}
+function fmtClock(cs) {             // clock time, hundredths since midnight
+  if (cs == null || cs === "") return "";
+  const s = Math.floor(cs / 100);
+  return `${pad(Math.floor(s / 3600) % 24)}:${pad(Math.floor((s % 3600) / 60))}` + (s % 60 ? `:${pad(s % 60)}` : "");
+}
+const STATUS = { 1: "DNS", 2: "DNF", 3: "MP", 4: "DSQ", 5: "Max time", 11: "W/O", 12: "Moved up" };
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const norm = s => String(s ?? "").normalize("NFC").toLowerCase();
+
+/* ---------- Data source: live API or demo ---------- */
+async function apiGet(params) {
+  const u = new URL(API);
+  Object.entries(params).forEach(([k, v]) => v != null && u.searchParams.set(k, v));
+  const r = await fetch(u, { cache: "no-store" });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+
+/* ---------- State ---------- */
+let state;
+function resetState() {
+  state = {
+    info: null,
+    classes: new Map(),   // name -> { hash, tracked, scannedAt, seen, controls, rows }
+    prev: new Map(),      // runnerKey -> { result, status, splits }
+    fresh: new Map(),     // runnerKey|field -> timestamp
+    flashing: new Set(),
+    feed: [],
+    lastClasses: 0, lastOk: 0, error: null, busy: false, gen: (state?.gen || 0) + 1
+  };
+}
+const needles = () => cfg.club.split(",").map(norm).map(s => s.trim()).filter(Boolean);
+const isClub = club => { const c = norm(club); return needles().some(n => c.includes(n)); };
+const rkey = (cls, r) => `${cls}|${r.name}|${r.club}`;
+
+/* Diff one runner against the previous snapshot; returns new events. */
+function diffRunner(cls, r, controls, classSeen) {
+  const key = rkey(cls, r);
+  const old = state.prev.get(key);
+  const now = Date.now();
+  const cur = { result: r.result, status: r.status, splits: {} };
+  const events = [];
+  for (const c of controls) {
+    const v = r.splits?.[c.code];
+    cur.splits[c.code] = v === "" || v == null ? null : Number(v);
+  }
+  if (classSeen) {
+    for (const c of controls) {
+      const was = old ? old.splits[c.code] : null, is = cur.splits[c.code];
+      if (is != null && is !== was) {
+        events.push({ field: String(c.code), label: c.name, time: fmtRun(is), place: r.splits[c.code + "_place"] });
+      }
+    }
+    const finishedNow = r.status !== 9 && r.status !== 10 && Number(r.result) !== 0 && r.result !== "";
+    const changed = !old || old.status !== r.status || old.result !== r.result;
+    if (finishedNow && changed) {
+      events.push({ field: "finish", label: "Finish", time: r.status === 0 ? fmtRun(Number(r.result)) : STATUS[r.status] || "?", place: r.status === 0 ? r.placeNum : "" });
+    }
+  }
+  state.prev.set(key, cur);
+  for (const e of events) {
+    const fk = key + "|" + e.field;
+    state.fresh.set(fk, now);
+    state.flashing.add(fk);
+    state.feed.unshift({ ts: now, name: r.name, cls, ...e });
+  }
+  state.feed = state.feed.slice(0, 20);
+  return events.length;
+}
+
+function ingestClass(name, resp) {
+  const c = state.classes.get(name) || { seen: false };
+  c.scannedAt = Date.now();
+  if (!resp || resp.status === "NOT MODIFIED") { state.classes.set(name, c); return 0; }
+  if (resp.status !== "OK") throw new Error("Class " + name + ": " + (resp.message || resp.status));
+  c.hash = resp.hash;
+  c.controls = resp.splitcontrols || [];
+  // Real place numbers: the API sends "=" for ties.
+  let lastPlace = "";
+  const all = (resp.results || []).map(r => {
+    let p = r.place;
+    if (p === "=") p = lastPlace; else if (/^\d+$/.test(p)) lastPlace = p;
+    return { ...r, status: Number(r.status), placeNum: /^\d+$/.test(p) ? p : "" };
+  });
+  c.total = all.length;
+  c.rows = all.filter(r => isClub(r.club));
+  c.tracked = c.rows.length > 0;
+  let n = 0;
+  for (const r of c.rows) n += diffRunner(name, r, c.controls, c.seen);
+  c.seen = true;
+  state.classes.set(name, c);
+  return n;
+}
+
+async function pool(items, fn) {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(CONCURRENCY, items.length) }, async () => {
+    while (i < items.length) { const it = items[i++]; await fn(it); }
+  });
+  await Promise.all(workers);
+}
+
+/* ---------- Poll cycle ---------- */
+let timer = null, tickTimer = null, nextAt = 0;
+async function cycle() {
+  const gen = state.gen;
+  clearTimeout(timer);
+  state.busy = true; renderStatus();
+  try {
+    const src = cfg.demo ? demo : null;
+    const get = src ? p => src.get(p) : apiGet;
+    if (!state.info) {
+      state.info = await get({ method: "getcompetitioninfo", comp: cfg.comp });
+    }
+    const now = Date.now();
+    if (now - state.lastClasses > RESCAN_MS || state.classes.size === 0) {
+      const cl = await get({ method: "getclasses", comp: cfg.comp });
+      if (cl.status === "OK") {
+        for (const { className } of cl.classes) if (!state.classes.has(className)) state.classes.set(className, { seen: false });
+      }
+      state.lastClasses = now;
+    }
+    const due = [...state.classes.entries()]
+      .filter(([, c]) => c.tracked || !c.scannedAt || now - c.scannedAt > RESCAN_MS)
+      .map(([n]) => n);
+    await pool(due, async name => {
+      const c = state.classes.get(name);
+      const resp = await get({ method: "getclassresults", comp: cfg.comp, class: name, unformattedTimes: "true", last_hash: c?.hash });
+      if (gen === state.gen) ingestClass(name, resp);
+    });
+    if (gen !== state.gen) return;
+    state.error = null; state.lastOk = Date.now();
+  } catch (e) {
+    if (gen !== state.gen) return;
+    state.error = navigator.onLine === false ? "You're offline." : "Can't reach liveresultat right now (" + e.message + "). Retrying.";
+  }
+  state.busy = false;
+  render();
+  if (!document.hidden) { nextAt = Date.now() + POLL_MS; timer = setTimeout(cycle, POLL_MS); }
+}
+
+/* ---------- Rendering ---------- */
+const $ = id => document.getElementById(id);
+function isToday(dateStr) {
+  const d = new Date(); return dateStr === `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function nowCs() {
+  if (cfg.demo) return demo.clockCs();
+  const d = new Date(); return ((d.getHours() * 60 + d.getMinutes()) * 60 + d.getSeconds()) * 100;
+}
+const live = () => cfg.demo || (state.info && isToday(state.info.date));
+
+function category(r) {
+  if (r.status === 0 && Number(r.result) > 0) return 0;
+  if (r.status === 9 || r.status === 10 || r.result === "") return Object.keys(r.splits || {}).some(k => /^\d+$/.test(k) && r.splits[k] !== "") ? 1 : 2;
+  if (r.status === 1) return 4;
+  return 3;
+}
+function sortRows(rows, controls) {
+  const lastIdx = r => { for (let i = controls.length - 1; i >= 0; i--) if (r.splits?.[controls[i].code] !== "" && r.splits?.[controls[i].code] != null) return i; return -1; };
+  return [...rows].sort((a, b) => {
+    const ca = category(a), cb = category(b);
+    if (ca !== cb) return ca - cb;
+    if (ca === 0) return Number(a.result) - Number(b.result);
+    if (ca === 1) { const ia = lastIdx(a), ib = lastIdx(b); if (ia !== ib) return ib - ia;
+      return Number(a.splits[controls[ia].code]) - Number(b.splits[controls[ib].code]); }
+    return (Number(a.start) || 0) - (Number(b.start) || 0);
+  });
+}
+function freshClass(fk) {
+  const t = state.fresh.get(fk);
+  if (!t || Date.now() - t > FRESH_MS) return "";
+  return " fresh" + (state.flashing.has(fk) ? " flash" : "");
+}
+
+function finishCell(cls, r) {
+  const fk = rkey(cls, r) + "|finish";
+  const cat = category(r);
+  if (cat === 0) return `<td class="cell${freshClass(fk)}"><span class="v">${fmtRun(Number(r.result))}</span><span class="s">${r.timeplus && r.timeplus !== "0" ? "+" + fmtRun(Number(r.timeplus)) : "&nbsp;"}</span></td>`;
+  if (cat === 3 || cat === 4) return `<td class="cell${freshClass(fk)}"><span class="tag bad">${esc(STATUS[r.status] || "—")}</span></td>`;
+  const st = Number(r.start);
+  if (st > 0 && live()) {
+    const el = nowCs() - st;
+    if (el > 0) return `<td class="cell"><span class="tag run" data-start="${st}">${fmtRun(el)}</span><span class="s">started ${fmtClock(st)}</span></td>`;
+    return `<td class="cell"><span class="tag wait">Start ${fmtClock(st)}</span></td>`;
+  }
+  return `<td class="cell"><span class="tag wait">${st > 0 ? "Start " + fmtClock(st) : "Not started"}</span></td>`;
+}
+
+function render() {
+  const info = state.info || {};
+  $("compName").textContent = (info.name ? info.name : "Competition " + cfg.comp) + (info.date ? " · " + info.date : "") + (cfg.demo ? " · demo data" : "");
+  $("clubTitle").textContent = cfg.club;
+  document.title = cfg.club + " · Klubbkoll";
+
+  const tracked = [...state.classes.entries()].filter(([, c]) => c.tracked).sort((a, b) => a[0].localeCompare(b[0], "sv", { numeric: true }));
+  const all = tracked.flatMap(([, c]) => c.rows);
+  const n = cat => all.filter(r => category(r) === cat).length;
+  $("counts").innerHTML = all.length
+    ? `<span><b>${all.length}</b> runners</span><span><b>${n(0)}</b> finished</span><span><b>${n(1)}</b> at controls</span><span><b>${n(2)}</b> waiting or out</span>`
+    : "";
+
+  const b = $("banner");
+  if (state.error) { b.hidden = false; b.className = "banner"; b.textContent = state.error; } else b.hidden = true;
+
+  $("feed").innerHTML = state.feed.slice(0, 10).map(e => `
+    <div class="ev${!e.seen && Date.now() - e.ts < FRESH_MS ? " hot" : ""}">
+      <div class="t">${esc(e.time)}${e.place ? ` <small>(${esc(e.place)})</small>` : ""}</div>
+      <div class="who">${esc(e.name)}</div>
+      <div class="what">${esc(e.label)} · ${esc(e.cls)} · ${new Date(e.ts).toLocaleTimeString("sv-SE")}</div>
+    </div>`).join("");
+
+  const scanned = [...state.classes.values()].filter(c => c.scannedAt).length;
+  if (!tracked.length) {
+    $("classes").innerHTML = `<div class="empty-state">${scanned < state.classes.size || !state.classes.size
+      ? `Searching ${state.classes.size || "the"} classes for runners from ${esc(cfg.club)}…`
+      : `No runners from ${esc(cfg.club)} in this competition. Check the club spelling under “Competition and club”.`}</div>`;
+  } else {
+    const scroll = {};
+    document.querySelectorAll("#classes .tbl").forEach(t => scroll[t.dataset.cls] = t.scrollLeft);
+    $("classes").innerHTML = tracked.map(([name, c]) => {
+      const rows = sortRows(c.rows, c.controls);
+      const head = `<tr><th></th><th class="l">Runner</th>${c.controls.map(k => `<th>${esc(k.name)}</th>`).join("")}<th>Finish</th></tr>`;
+      const body = rows.map(r => {
+        const key = rkey(name, r);
+        const cat = category(r);
+        const splits = c.controls.map(k => {
+          const v = r.splits?.[k.code];
+          if (v === "" || v == null) return `<td class="cell empty"><span class="v">·</span></td>`;
+          const pl = r.splits[k.code + "_place"], tp = r.splits[k.code + "_timeplus"];
+          const sub = [pl && pl !== "-" ? "(" + pl + ")" : "", tp > 0 ? "+" + fmtRun(tp) : ""].filter(Boolean).join(" ");
+          return `<td class="cell${freshClass(key + "|" + k.code)}"><span class="v">${fmtRun(Number(v))}</span><span class="s">${sub || "&nbsp;"}</span></td>`;
+        }).join("");
+        return `<tr><td class="pl${cat === 0 ? " ok" : ""}">${cat === 0 ? esc(r.placeNum) : ""}</td>
+          <td class="who l"><div class="n">${esc(r.name)}</div><div class="c">${esc(r.club)}</div></td>${splits}${finishCell(name, r)}</tr>`;
+      }).join("");
+      return `<section class="cls"><h2>${esc(name)} <small>${c.rows.length} of ${c.total}</small></h2>
+        <div class="tbl" data-cls="${esc(name)}"><table><thead>${head}</thead><tbody>${body}</tbody></table></div></section>`;
+    }).join("");
+    document.querySelectorAll("#classes .tbl").forEach(t => { if (scroll[t.dataset.cls]) t.scrollLeft = scroll[t.dataset.cls]; });
+  }
+  state.flashing.clear();
+  renderStatus();
+}
+
+function renderStatus() {
+  const dot = $("dot");
+  dot.className = "dot" + (state.error ? " err" : state.busy ? " busy" : "");
+  let t;
+  if (state.busy) t = "Updating…";
+  else if (document.hidden) t = "Paused";
+  else if (state.lastOk) t = `Updated ${new Date(state.lastOk).toLocaleTimeString("sv-SE")} · next in ${Math.max(0, Math.ceil((nextAt - Date.now()) / 1000))} s`;
+  else t = "Connecting…";
+  $("statusText").textContent = t;
+}
+
+/* Every second: countdown + running clocks, without refetching. */
+function tick() {
+  renderStatus();
+  if (!live()) return;
+  const now = nowCs();
+  document.querySelectorAll("#classes .tag.run[data-start]").forEach(el => { el.textContent = fmtRun(now - Number(el.dataset.start)); });
+}
+
+/* ---------- Demo source: a simulated race at 60x speed ---------- */
+const demo = (() => {
+  const t0 = Date.now(), SPEED = 60, START = 10 * 360000; // 10:00, one real second = one race minute
+  const classes = {
+    "H21 Demo": { controls: [{ code: 1031, name: "Radio 1" }, { code: 1065, name: "Radio 2" }, { code: 1090, name: "Förvarning" }],
+      frac: [0.3, 0.65, 0.93],
+      runners: [["Erik Lind", "OK Södertörn"], ["Johan Berg", "IFK Lidingö SOK"], ["Anders Holm", "OK Södertörn"], ["Per Ström", "Järla Orientering"],
+        ["Mats Ek", "Tullinge SK"], ["Lars Viik", "OK Södertörn"], ["Nils Sand", "Snättringe SK"], ["Olof Dahl", "Täby OK"]] },
+    "D16 Demo": { controls: [{ code: 1090, name: "Förvarning" }], frac: [0.92],
+      runners: [["Elsa Norén", "OK Södertörn"], ["Maja Falk", "OK Ravinen"], ["Ida Björk", "OK Södertörn"], ["Saga Lund", "Väsby OK"]] }
+  };
+  // Deterministic per-runner start offset and total time.
+  Object.values(classes).forEach((c, ci) => c.runners = c.runners.map(([name, club], i) => ({
+    name, club, start: START + (i * 90 + ci * 40) * 100,
+    total: (ci ? 1900 : 2400) * 100 + ((i * 7919 + ci * 104729) % 600) * 100,
+    status: name === "Per Ström" ? 3 : 0
+  })));
+  const clockCs = () => START + 5 * 60 * 100 + Math.floor((Date.now() - t0) / 1000 * SPEED * 100);
+  const h = s => { let x = 0; for (const ch of s) x = (x * 31 + ch.charCodeAt(0)) | 0; return "d" + (x >>> 0).toString(16); };
+  function results(name) {
+    const c = classes[name], now = clockCs();
+    const rows = c.runners.map(r => {
+      const el = now - r.start, splits = {}, fin = el >= r.total;
+      c.controls.forEach((k, i) => { const t = Math.round(r.total * c.frac[i] / 100) * 100; splits[k.code] = el >= t ? t : ""; });
+      return { name: r.name, club: r.club, start: r.start, splits,
+        status: fin ? r.status : 9, result: fin ? (r.status ? -r.status : r.total) : "" };
+    });
+    c.controls.forEach(k => {
+      const passed = rows.filter(r => r.splits[k.code] !== "" && r.status !== 3).sort((a, b) => a.splits[k.code] - b.splits[k.code]);
+      const best = passed[0]?.splits[k.code];
+      rows.forEach(r => { const v = r.splits[k.code];
+        if (v === "") { r.splits[k.code + "_status"] = 1; r.splits[k.code + "_place"] = ""; return; }
+        r.splits[k.code + "_status"] = r.status === 3 ? 3 : 0;
+        r.splits[k.code + "_place"] = r.status === 3 ? "-" : passed.indexOf(r) + 1;
+        r.splits[k.code + "_timeplus"] = v - best; });
+    });
+    const ok = rows.filter(r => r.status === 0 && r.result !== "").sort((a, b) => a.result - b.result);
+    rows.forEach(r => { r.place = ok.includes(r) ? String(ok.indexOf(r) + 1) : r.status === 9 ? "" : "-";
+      r.timeplus = ok.includes(r) ? String(r.result - ok[0].result) : ""; });
+    return { status: "OK", className: name, splitcontrols: c.controls, results: rows };
+  }
+  return {
+    clockCs,
+    races: () => [{ id: "demo", name: "Demo race", organizer: "Klubbkoll", date: "", timediff: 0 }],
+    async get(p) {
+      await new Promise(r => setTimeout(r, 150));
+      if (p.method === "getcompetitioninfo") return { id: 0, name: "Demo race", date: "", timediff: 0 };
+      if (p.method === "getclasses") return { status: "OK", classes: Object.keys(classes).map(className => ({ className })) };
+      const res = results(p.class); res.hash = h(JSON.stringify(res.results));
+      return p.last_hash === res.hash ? { status: "NOT MODIFIED" } : res;
+    }
+  };
+})();
+
+/* ---------- Today's races ---------- */
+const RACES_TTL = 10 * 60000;
+let races = { list: [], at: 0, hasCountry: false, error: null, loading: false };
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+cfg.onlySe = store.get("onlySe", "1") === "1";
+
+/* The API builds its JSON by string concatenation, so one race name with a quote
+   breaks JSON.parse for the whole list. Fall back to pulling out each object. */
+function parseCompetitions(text) {
+  try { return JSON.parse(text).competitions || []; } catch {}
+  const out = [], re = /\{"id":\s*(\d+),\s*"name":\s*"(.*?)",\s*"organizer":\s*"(.*?)",\s*"date":\s*"(\d{4}-\d{2}-\d{2})"([^{}]*)\}/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const rest = m[5], num = k => { const x = rest.match(new RegExp(`"${k}":\\s*(-?\\d+)`)); return x ? Number(x[1]) : undefined; };
+    const ctry = rest.match(/"country":\s*"(.*?)"/);
+    out.push({ id: Number(m[1]), name: m[2], organizer: m[3], date: m[4], timediff: num("timediff"), multidaystage: num("multidaystage"), country: ctry ? ctry[1] : undefined });
+  }
+  return out;
+}
+
+/* Swedish or not. Uses a country field when the API sends one. Otherwise: the race
+   must be on Swedish time (timediff 0, which drops Finland, Estonia, UK and others),
+   and Norwegian/Danish spelling rules out the two neighbours on the same time. */
+function isSwedish(c) {
+  if (c.country) return /^(se|swe|sweden|sverige)$/i.test(String(c.country).trim());
+  if (Number(c.timediff || 0) !== 0) return false;
+  const t = `${c.name} ${c.organizer}`;
+  if (/[æøÆØ]/.test(t)) return false;
+  if (/\b(IL|idrettslag|orienteringslag|orienteringsklub|Norge|Norway|Danmark|Denmark|NM|DM-?uke)\b/.test(t)) return false;
+  return true;
+}
+
+async function loadRaces(force) {
+  if (races.loading) return;
+  if (!force && races.at && Date.now() - races.at < RACES_TTL) { renderRaces(); return; }
+  races.loading = true; renderRaces();
+  try {
+    let list;
+    if (cfg.demo) list = demo.races();
+    else {
+      const r = await fetch(API + "?method=getcompetitions", { cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      list = parseCompetitions(await r.text());
+    }
+    races.hasCountry = list.some(c => c.country != null && c.country !== "");
+    const today = todayStr();
+    races.list = list.filter(c => c.date === today || cfg.demo)
+      .sort((a, b) => a.name.localeCompare(b.name, "sv"));
+    races.at = Date.now(); races.error = null;
+  } catch (e) {
+    races.error = "Couldn't load today's races (" + e.message + "). You can still enter a race ID or link below.";
+  }
+  races.loading = false;
+  renderRaces();
+  // Not following one of today's races? Show the picker.
+  if (!cfg.demo && !qs.get("comp") && races.list.length && !races.list.some(c => String(c.id) === String(cfg.comp))) $("settings").open = true;
+}
+
+function renderRaces() {
+  const q = norm($("raceSearch").value).trim();
+  const shown = races.list
+    .filter(c => !cfg.onlySe || cfg.demo || isSwedish(c))
+    .filter(c => !q || norm(c.name + " " + c.organizer).includes(q));
+  const hidden = races.list.length - races.list.filter(c => !cfg.onlySe || cfg.demo || isSwedish(c)).length;
+  $("racesTitle").textContent = cfg.demo ? "Demo races" : "Today's races · " + todayStr();
+  let html;
+  if (races.loading && !races.list.length) html = `<li class="none">Loading today's races…</li>`;
+  else if (races.error) html = `<li class="none">${esc(races.error)}</li>`;
+  else if (!shown.length) html = `<li class="none">${races.list.length ? "No races match." : "No races on liveresultat today."}</li>`;
+  else html = shown.map(c => `<li><button type="button" data-id="${esc(c.id)}" aria-pressed="${String(c.id) === String(cfg.comp)}">
+      <span class="rn">${esc(c.name)}${c.multidaystage ? ` · stage ${esc(c.multidaystage)}` : ""}</span>
+      <span class="ro">${esc(c.organizer)}</span>
+      <span class="rc">${c.country ? esc(String(c.country).toUpperCase()) : "#" + esc(c.id)}</span></button></li>`).join("");
+  $("raceList").innerHTML = html;
+  const notes = [];
+  if (cfg.onlySe && hidden > 0 && !cfg.demo) notes.push(`${hidden} race${hidden === 1 ? "" : "s"} outside Sweden hidden.`);
+  if (cfg.onlySe && !races.hasCountry && races.list.length && !cfg.demo) notes.push("The race list has no country field, so “Swedish” is a best guess from time zone and spelling.");
+  $("raceNote").textContent = notes.join(" ");
+}
+
+$("raceList").addEventListener("click", e => {
+  const b = e.target.closest("button[data-id]"); if (!b) return;
+  cfg.comp = b.dataset.id;
+  if (!cfg.demo) store.set("comp", cfg.comp);
+  $("settings").open = false;
+  start();
+  renderRaces();
+});
+$("onlySe").addEventListener("change", e => { cfg.onlySe = e.target.checked; store.set("onlySe", cfg.onlySe ? "1" : "0"); renderRaces(); });
+$("raceSearch").addEventListener("input", renderRaces);
+$("settings").addEventListener("toggle", () => { if ($("settings").open) loadRaces(false); });
+
+/* ---------- Wiring ---------- */
+function start() {
+  clearTimeout(timer);
+  resetState();
+  $("compInput").value = cfg.demo ? "" : cfg.comp;
+  $("clubInput").value = cfg.club;
+  render();
+  cycle();
+}
+$("cfg").addEventListener("submit", e => {
+  e.preventDefault();
+  const m = $("compInput").value.match(/\d{3,}/);
+  if (m) cfg.comp = m[0];
+  cfg.club = $("clubInput").value.trim() || cfg.club;
+  if (cfg.demo) { cfg.demo = false; races.at = 0; if (cfg.comp === "demo") cfg.comp = store.get("comp", "40847"); }
+  store.set("comp", cfg.comp); store.set("club", cfg.club);
+  $("settings").open = false;
+  start();
+});
+$("demoBtn").addEventListener("click", () => { cfg.demo = true; cfg.club = "OK Södertörn"; cfg.comp = "demo"; races.at = 0; $("settings").open = false; start(); });
+$("seenBtn").addEventListener("click", () => { state.fresh.clear(); state.feed.forEach(e => e.seen = true); render(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { clearTimeout(timer); renderStatus(); }
+  else if (state.lastOk || state.error) cycle();
+});
+tickTimer = setInterval(tick, 1000);
+$("onlySe").checked = cfg.onlySe;
+if (cfg.demo) cfg.comp = "demo";
+start();
+loadRaces(true);
+})();
+</script>
+</body>
+</html>
